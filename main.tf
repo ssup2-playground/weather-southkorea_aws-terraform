@@ -519,6 +519,71 @@ resource "helm_release" "aws_load_balancer_controller" {
   }
 }
 
+## EKS / EBS CSI
+module "eks_ebs_csi_irsa_role" {
+  source = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+
+  role_name             = format("%s-eks-ebs-csi", local.name)
+  attach_ebs_csi_policy = true
+
+  oidc_providers = {
+    main = {
+      provider_arn               = module.eks.oidc_provider_arn
+      namespace_service_accounts = ["kube-system:ebs-csi-controller-sa"]
+    }
+  }
+}
+
+resource "helm_release" "aws_ebs_csi_driver" {
+  namespace  = "kube-system"
+  name       = "aws-ebs-csi-driver"
+  chart      = "aws-ebs-csi-driver"
+  repository = "https://kubernetes-sigs.github.io/aws-ebs-csi-driver/"
+ 
+  set {
+    name  = "controller.serviceAccount.name"
+    value = "ebs-csi-controller-sa"
+  }
+  set {
+    name  = "controller.serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+    value = module.eks_ebs_csi_irsa_role.iam_role_arn
+  }
+  set {
+    name  = "controller.nodeSelector.type"
+    value = "control"
+  }
+  set {
+    name  = "controller.tolerations[0].key"
+    value = "type"
+  }
+  set {
+    name  = "controller.tolerations[0].value"
+    value = "control"
+  }
+  set {
+    name  = "controller.tolerations[0].operator"
+    value = "Equal"
+  }
+  set {
+    name  = "controller.tolerations[0].effect"
+    value = "NoSchedule"
+  }
+}
+
+resource "kubectl_manifest" "ebs_sc" {
+  yaml_body = <<-YAML
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: ebs-sc
+    provisioner: ebs.csi.aws.com
+  YAML
+
+  depends_on = [
+    helm_release.aws_ebs_csi_driver
+  ]
+}
+
 ## EKS / EFS CSI
 module "eks_efs_csi_irsa_role" {
   source = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
@@ -628,3 +693,42 @@ resource "kubectl_manifest" "efs_sc" {
   ]
 }
 
+## EKS / Airflow 
+resource "helm_release" "airflow" {
+  namespace  = "airflow"
+  create_namespace = true
+
+  name       = "airflow"
+  chart      = "airflow"
+  repository = "https://airflow.apache.org"
+  timeout    = "600"
+
+  set {
+    name  = "createUserJob.useHelmHooks"
+    value = "false"
+  }
+  set {
+    name  = "createUserJob.applyCustomEnv"
+    value = "false"
+  }
+  set {
+    name  = "migrateDatabaseJob.useHelmHooks"
+    value = "false"
+  }
+  set {
+    name  = "migrateDatabaseJob.applyCustomEnv"
+    value = "false"
+  }
+  set {
+    name = "webserver.service.type"
+    value = "LoadBalancer" 
+  }
+  set {
+    name  = "webserver.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type"
+    value = "external"
+  }
+  set {
+    name  = "webserver.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-scheme"
+    value = "internet-facing"
+  }
+}
