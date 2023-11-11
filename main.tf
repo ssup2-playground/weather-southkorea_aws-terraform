@@ -720,6 +720,18 @@ resource "helm_release" "airflow" {
     value = "false"
   }
   set {
+    name  = "executor"
+    value = "KubernetesExecutor"
+  }
+  set {
+    name  = "dags.gitSync.enabled"
+    value = "true"
+  }
+  set {
+    name  = "dags.gitSync.repo"
+    value = "https://github.com/ssup2-playground/weather-southkorea_airflow-dag.git"
+  }
+  set {
     name = "webserver.service.type"
     value = "LoadBalancer" 
   }
