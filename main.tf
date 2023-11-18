@@ -732,6 +732,14 @@ resource "helm_release" "airflow" {
     value = "https://github.com/ssup2-playground/weather-southkorea_airflow-dag.git"
   }
   set {
+    name  = "dags.gitSync.subPath"
+    value = "dags"
+  }
+  set {
+    name  = "dags.gitSync.branch"
+    value = "master"
+  }
+  set {
     name = "webserver.service.type"
     value = "LoadBalancer" 
   }
@@ -743,4 +751,16 @@ resource "helm_release" "airflow" {
     name  = "webserver.service.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-scheme"
     value = "internet-facing"
   }
+}
+
+## Workload
+resource "aws_s3_bucket" "data" {
+  bucket = local.s3_bucket_data
+}
+
+resource "aws_s3_object" "data_synoptic" {
+  bucket = "${aws_s3_bucket.data.id}"
+  acl    = "private"
+  key    = format("%s/", local.s3_dir_data_synoptic)
+  source = "/dev/null"
 }
